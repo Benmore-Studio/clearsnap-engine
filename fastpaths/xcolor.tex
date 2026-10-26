@@ -1,0 +1,280 @@
+% when: xcolor, beamer, tikz, pgfplots, tcolorbox
+% Beamer makes tens of thousands of \colorlet copies, and xcolor parses each one in full. Three kinds are shortcut, each
+% giving exactly the definition xcolor would: a copy of a defined color by its plain name (a \let), a copy of the
+% current color "." (PGF's xxcolor makes one at every \color) and a color mix (red!20!blue). The last two keep the
+% color an expression produced together with the definitions it came from, and use it only while those are the same
+% (\ifx) and xcolor's settings are as they were when the shortcut was installed. The kind of each color expression is
+% kept by its text. Everything else (other expressions, types or models, tracing, xcolor's prologue file, a different
+% xcolor \colorlet) runs xcolor's own code.
+\makeatletter
+\def\clearsnap@xc@end{\clearsnap@xc@end}
+\def\clearsnap@xc@expect[#1]#2[#3]#4%
+ {\begingroup
+  \edef\@@cls{#1}\XC@edef\@@nam{#2}\XC@sdef\@@mod{#3}\XC@edef\@@clr{#4}%
+  \XC@info\@@clr\@@tmp\XC@@tstfalse
+  \ifnum\@@tmp=\@ne\ifx\@@mod\@empty
+    \ifx\@@cls\@empty
+      \XC@@tsttrue
+    \else
+      \edef\@@tmp
+       {\expandafter\expandafter\expandafter\@secondoffive
+         \csname\@backslashchar color@\@@clr\endcsname}%
+      \ifx\@@cls\@@tmp\XC@@tsttrue\fi
+    \fi
+  \fi\fi
+  \ifXC@@tst
+    \XC@logdef\@@nam\XC@c@l@rlet\@@nam\@@clr
+  \else
+    \extractcolorspec\@@clr\@@clr
+    \ifx\@@mod\@empty\else
+      \expandafter\convertcolorspec\@@clr\@@mod\@@clr
+      \edef\@@clr{{\@@mod}{\@@clr}}\fi
+    \edef\@@tmp{\noexpand\XC@definecolor[\@@cls]{\@@nam}\@@clr}%
+  \fi
+  \expandafter\endgroup\@@tmp\xglobal@stop}
+\def\clearsnap@xc@settings{%
+  \ifconvertcolorsD D\fi\ifmaskcolors M\fi\ifblendcolors B\fi|%
+  \expandafter\strip@prefix\meaning\XC@tgt@mod|\XC@tracing|\expandafter\strip@prefix\meaning\colorblend|%
+  \ifx\rangeHsb\undefined\else\rangeHsb\fi|\ifx\rangetHsb\undefined\else\rangetHsb\fi|%
+  \ifx\rangeRGB\undefined\else\rangeRGB\fi|\ifx\rangeHSB\undefined\else\rangeHSB\fi|%
+  \ifx\rangeGray\undefined\else\rangeGray\fi|\ifx\XC@@xcp@\undefined\else\XC@@xcp@\fi}
+% Installed after xcolor loads, if its \colorlet is the code above and it isn't tracing or writing a prologue.
+\def\clearsnap@xc@install{%
+  \ifx\clearsnap@xc@expect\XC@col@rlet
+    \ifnum\XC@tracing<\tw@ \ifnum\XC@@xcp@=\z@\else
+      \global\let\clearsnap@xc@orig\XC@col@rlet
+      \gdef\XC@col@rlet[##1]##2[##3]##4{%
+        \let\clearsnap@xc@next\clearsnap@xc@orig
+        \ifcat$\detokenize{##1##3}$\clearsnap@xc@look{##4}\fi
+        \clearsnap@xc@next[##1]{##2}[##3]{##4}}%
+    \fi\fi
+  \fi}
+% The kind of the expression, kept by its text while that text can be read without xcolor's own expansion (no active
+% punctuation, the usual \escapechar), decides what runs: one of the shortcuts below or xcolor's code. Kinds, mixes
+% and current colors are kept for the first 2000 (\clearsnap@xc@count), so a document that makes colors without end
+% (a color map) keeps the rest in xcolor's code.
+\newcount\clearsnap@xc@count
+\def\clearsnap@xc@simple{%
+  \ifnum\escapechar=92 \ifnum\catcode`\!=13 1\else\ifnum\catcode`\:=13 1\else\ifnum\catcode`\-=13 1\else
+  \ifnum\catcode`\+=13 1\else\ifnum\catcode`\;=13 1\else\ifnum\catcode`\"=13 1\else\ifnum\catcode`\>=13 1\else
+  0\fi\fi\fi\fi\fi\fi\fi\else1\fi}
+\def\clearsnap@xc@look#1{%
+  \ifnum\clearsnap@xc@simple=\z@
+    \let\clearsnap@xc@nm\clearsnap@xc@nmfast
+    \edef\clearsnap@xc@clr{#1}%
+    \edef\clearsnap@xc@clr{\detokenize\expandafter{\clearsnap@xc@clr}}%
+    \ifcsname clearsnap@xc@k@\clearsnap@xc@clr\endcsname
+      \expandafter\let\expandafter\clearsnap@xc@kind\csname clearsnap@xc@k@\clearsnap@xc@clr\endcsname
+    \else
+      \clearsnap@xc@classify
+      \ifnum\clearsnap@xc@count<2000
+        \global\advance\clearsnap@xc@count\@ne
+        \global\expandafter\let\csname clearsnap@xc@k@\clearsnap@xc@clr\endcsname\clearsnap@xc@kind
+      \fi
+    \fi
+  \else
+    \let\clearsnap@xc@nm\clearsnap@xc@nmslow
+    \XC@edef\clearsnap@xc@clr{#1}%
+    \clearsnap@xc@classify
+  \fi
+  \clearsnap@xc@kind}
+\def\clearsnap@xc@nmfast#1{\edef\clearsnap@xc@nam{#1}\edef\clearsnap@xc@nam{\detokenize\expandafter{\clearsnap@xc@nam}}}
+\def\clearsnap@xc@nmslow#1{\XC@edef\clearsnap@xc@nam{#1}}
+% A mix (has !), the current color, a plain name (xcolor's type 1: no >, :, ! or leading -, not .) or anything else.
+\def\clearsnap@xc@classify{%
+  \let\clearsnap@xc@kind\@empty
+  \expandafter\in@\expandafter!\expandafter{\clearsnap@xc@clr}%
+  \ifin@
+    \let\clearsnap@xc@kind\clearsnap@xc@mix
+  \else\ifx\clearsnap@xc@clr\clearsnap@xc@dot
+    \let\clearsnap@xc@kind\clearsnap@xc@current
+  \else
+    \expandafter\in@\expandafter>\expandafter{\clearsnap@xc@clr}%
+    \ifin@\else
+      \expandafter\in@\expandafter:\expandafter{\clearsnap@xc@clr}%
+      \ifin@\else
+        \if-\expandafter\@car\clearsnap@xc@clr\relax\@nil\else
+          \edef\clearsnap@xc@tmp{\noexpand\in@{/./}{/\clearsnap@xc@clr/}}\clearsnap@xc@tmp
+          \ifin@\else\let\clearsnap@xc@kind\clearsnap@xc@plain\fi
+        \fi
+      \fi
+    \fi
+  \fi\fi}
+\def\clearsnap@xc@mix{%
+  \edef\clearsnap@xc@now{\clearsnap@xc@settings}%
+  \ifx\clearsnap@xc@now\clearsnap@xc@set
+    \ifcsname clearsnap@xc@r@\clearsnap@xc@clr\endcsname
+      \let\clearsnap@xc@same\@empty
+      \expandafter\expandafter\expandafter\clearsnap@xc@check
+        \csname clearsnap@xc@n@\clearsnap@xc@clr\endcsname\clearsnap@xc@end
+      \ifx\clearsnap@xc@same\@empty\let\clearsnap@xc@next\clearsnap@xc@hit\else\clearsnap@xc@changed\fi
+    \else
+      \ifnum\clearsnap@xc@count<2000 \let\clearsnap@xc@next\clearsnap@xc@keep\fi
+    \fi
+  \fi}
+% A mix whose colors keep changing (pgfplots' "mapped color!80!black" changes at every patch of a surface) is kept
+% again three times, then left to xcolor's code.
+\def\clearsnap@xc@changed{%
+  \ifcsname clearsnap@xc@v@\clearsnap@xc@clr\endcsname
+    \expandafter\xdef\csname clearsnap@xc@v@\clearsnap@xc@clr\endcsname
+      {\the\numexpr\csname clearsnap@xc@v@\clearsnap@xc@clr\endcsname+1}%
+  \else
+    \expandafter\gdef\csname clearsnap@xc@v@\clearsnap@xc@clr\endcsname{1}%
+  \fi
+  \ifnum\csname clearsnap@xc@v@\clearsnap@xc@clr\endcsname<4
+    \let\clearsnap@xc@next\clearsnap@xc@keep
+  \else
+    \global\expandafter\let\csname clearsnap@xc@k@\clearsnap@xc@clr\endcsname\@empty
+  \fi}
+% A copy of a defined color by its plain name is the \let xcolor would make.
+\def\clearsnap@xc@plain{%
+  \ifnum\XC@tracing<\tw@
+    \ifcsname\@backslashchar color@\clearsnap@xc@clr\endcsname
+      \expandafter\ifx\csname\@backslashchar color@\clearsnap@xc@clr\endcsname\relax\else
+        \let\clearsnap@xc@next\clearsnap@xc@copy
+      \fi
+    \fi
+  \fi}
+\def\clearsnap@xc@copy[#1]#2[#3]#4{%
+  \clearsnap@xc@nm{#2}%
+  \ifglobalcolors\global\else\xglobal@\fi
+  \expandafter\let\csname\@backslashchar color@\clearsnap@xc@nam\expandafter\endcsname
+    \csname\@backslashchar color@\clearsnap@xc@clr\endcsname
+  \xglobal@stop}
+% A copy of the current color "." (PGF's xxcolor makes one at every \color, so Beamer makes thousands) only depends on
+% the current color's definition and xcolor's settings, unless that is a named-model color, so the copy each
+% definition gave is kept by its meaning and used while the definition is the same (\ifx).
+\def\clearsnap@xc@current{%
+  \ifcsname\@backslashchar color@.\endcsname
+    \ifnum\XC@type{.}>\@ne
+      \edef\clearsnap@xc@now{\clearsnap@xc@settings}%
+      \ifx\clearsnap@xc@now\clearsnap@xc@set
+        \edef\clearsnap@xc@key{\expandafter\expandafter\expandafter\strip@prefix
+          \expandafter\meaning\csname\@backslashchar color@.\endcsname}%
+        \ifcsname clearsnap@xc@ps@\clearsnap@xc@key\endcsname
+          \expandafter\ifx\csname clearsnap@xc@ps@\clearsnap@xc@key\expandafter\endcsname
+              \csname\@backslashchar color@.\endcsname
+            \let\clearsnap@xc@next\clearsnap@xc@curhit
+          \else
+            \clearsnap@xc@curnew
+          \fi
+        \else
+          \ifnum\clearsnap@xc@count<2000 \clearsnap@xc@curnew\fi
+        \fi
+      \fi
+    \fi
+  \fi}
+\def\clearsnap@xc@curnew{%
+  \expandafter\expandafter\expandafter\clearsnap@xc@curmod\csname\@backslashchar color@.\endcsname\clearsnap@xc@end
+  \ifx\clearsnap@xc@tmp\XC@mod@named\else\let\clearsnap@xc@next\clearsnap@xc@curkeep\fi}
+\def\clearsnap@xc@curmod\xcolor@#1#2#3#4\clearsnap@xc@end{\XC@sdef\clearsnap@xc@tmp{#3}}
+\def\clearsnap@xc@curhit[#1]#2[#3]#4{%
+  \clearsnap@xc@nm{#2}%
+  \ifglobalcolors\global\else\xglobal@\fi
+  \expandafter\let\csname\@backslashchar color@\clearsnap@xc@nam\expandafter\endcsname
+    \csname clearsnap@xc@pr@\clearsnap@xc@key\endcsname
+  \xglobal@stop}
+\def\clearsnap@xc@curkeep[#1]#2[#3]#4{%
+  \global\advance\clearsnap@xc@count\@ne
+  \let\clearsnap@xc@ckey\clearsnap@xc@key
+  \expandafter\let\expandafter\clearsnap@xc@src\csname\@backslashchar color@.\endcsname
+  \clearsnap@xc@orig[#1]{#2}[#3]{#4}%
+  \clearsnap@xc@nm{#2}%
+  \global\expandafter\let\csname clearsnap@xc@pr@\clearsnap@xc@ckey\expandafter\endcsname
+    \csname\@backslashchar color@\clearsnap@xc@nam\endcsname
+  \global\expandafter\let\csname clearsnap@xc@ps@\clearsnap@xc@ckey\endcsname\clearsnap@xc@src}
+\def\clearsnap@xc@check#1{%
+  \def\clearsnap@xc@tmp{#1}%
+  \ifx\clearsnap@xc@tmp\clearsnap@xc@endname\else
+    \expandafter\ifx\csname\@backslashchar color@#1\expandafter\endcsname
+      \csname clearsnap@xc@d@\clearsnap@xc@clr @#1\endcsname
+    \else\def\clearsnap@xc@same{no}\fi
+    \expandafter\clearsnap@xc@check
+  \fi}
+\def\clearsnap@xc@endname{\clearsnap@xc@end}
+\def\clearsnap@xc@hit[#1]#2[#3]#4{%
+  \clearsnap@xc@nm{#2}%
+  \ifglobalcolors\global\else\xglobal@\fi
+  \expandafter\let\csname\@backslashchar color@\clearsnap@xc@nam\expandafter\endcsname
+    \csname clearsnap@xc@r@\clearsnap@xc@clr\endcsname
+  \xglobal@stop}
+% Finds the colors a mix names (name!num!name...[!num], one leading - allowed), keeps their definitions, lets xcolor
+% compute the color and keeps it. A mix that names anything else (the current color ".", extended syntax, an
+% undefined color) is only computed.
+\def\clearsnap@xc@keep[#1]#2[#3]#4{%
+  \let\clearsnap@xc@names\@empty \let\clearsnap@xc@good\relax
+  \expandafter\clearsnap@xc@name\clearsnap@xc@clr!\clearsnap@xc@end
+  \ifx\clearsnap@xc@good\relax
+    \global\advance\clearsnap@xc@count\@ne
+    \let\clearsnap@xc@key\clearsnap@xc@clr
+    \def\clearsnap@xc@one##1{\expandafter\let\csname clearsnap@xc@t@##1\expandafter\endcsname\csname\@backslashchar color@##1\endcsname}%
+    \expandafter\clearsnap@xc@each\clearsnap@xc@names\clearsnap@xc@end
+    \clearsnap@xc@orig[#1]{#2}[#3]{#4}%
+    \clearsnap@xc@nm{#2}%
+    \def\clearsnap@xc@one##1{\global\expandafter\let\csname clearsnap@xc@d@\clearsnap@xc@key @##1\expandafter\endcsname\csname clearsnap@xc@t@##1\endcsname}%
+    \expandafter\clearsnap@xc@each\clearsnap@xc@names\clearsnap@xc@end
+    \global\expandafter\let\csname clearsnap@xc@n@\clearsnap@xc@key\endcsname\clearsnap@xc@names
+    \global\expandafter\let\csname clearsnap@xc@r@\clearsnap@xc@key\expandafter\endcsname
+      \csname\@backslashchar color@\clearsnap@xc@nam\endcsname
+  \else
+    \clearsnap@xc@orig[#1]{#2}[#3]{#4}%
+  \fi}
+\def\clearsnap@xc@each#1{%
+  \def\clearsnap@xc@tmp{#1}%
+  \ifx\clearsnap@xc@tmp\clearsnap@xc@endname\else\clearsnap@xc@one{#1}\expandafter\clearsnap@xc@each\fi}
+\def\clearsnap@xc@name#1!#2\clearsnap@xc@end{%
+  \clearsnap@xc@isname{#1}%
+  \def\clearsnap@xc@tmp{#2}%
+  \ifx\clearsnap@xc@tmp\@empty\else\clearsnap@xc@num#2\clearsnap@xc@end\fi}
+\def\clearsnap@xc@num#1!#2\clearsnap@xc@end{%
+  \clearsnap@xc@isnum{#1}%
+  \def\clearsnap@xc@tmp{#2}%
+  \ifx\clearsnap@xc@tmp\@empty\else\clearsnap@xc@name#2\clearsnap@xc@end\fi}
+\def\clearsnap@xc@isnum#1{%
+  \def\clearsnap@xc@tmp{#1}%
+  \ifx\clearsnap@xc@tmp\@empty\let\clearsnap@xc@good\@empty\else
+    \in@{ }{#1}\ifin@\let\clearsnap@xc@good\@empty\else\clearsnap@xc@digit#1\clearsnap@xc@end\fi
+  \fi}
+\def\clearsnap@xc@digit#1{%
+  \ifx#1\clearsnap@xc@end\else
+    \ifnum`#1<`0 \ifnum`#1=`.\else\let\clearsnap@xc@good\@empty\fi\else
+      \ifnum`#1>`9 \let\clearsnap@xc@good\@empty\fi\fi
+    \expandafter\clearsnap@xc@digit
+  \fi}
+\def\clearsnap@xc@isname#1{%
+  \def\clearsnap@xc@tmp{#1}%
+  \ifx\clearsnap@xc@tmp\@empty\let\clearsnap@xc@good\@empty\else
+    \clearsnap@xc@unplain{#1}%
+    \ifx\clearsnap@xc@good\relax
+      \edef\clearsnap@xc@tmp{\clearsnap@xc@nodash#1\clearsnap@xc@end}%
+      \let\clearsnap@xc@def\@empty
+      \ifcsname\@backslashchar color@\clearsnap@xc@tmp\endcsname
+        \expandafter\ifx\csname\@backslashchar color@\clearsnap@xc@tmp\endcsname\relax\else
+          \let\clearsnap@xc@def\relax
+        \fi
+      \fi
+      \ifx\clearsnap@xc@def\relax
+        \edef\clearsnap@xc@names{\clearsnap@xc@names{\clearsnap@xc@tmp}}%
+      \else
+        \let\clearsnap@xc@good\@empty
+      \fi
+    \fi
+  \fi}
+\def\clearsnap@xc@nodash#1#2\clearsnap@xc@end{\if-#1#2\else#1#2\fi}
+\def\clearsnap@xc@dot{.}
+\def\clearsnap@xc@unplain#1{%
+  \in@{:}{#1}\ifin@\let\clearsnap@xc@good\@empty\fi
+  \in@{>}{#1}\ifin@\let\clearsnap@xc@good\@empty\fi
+  \in@{,}{#1}\ifin@\let\clearsnap@xc@good\@empty\fi
+  \in@{;}{#1}\ifin@\let\clearsnap@xc@good\@empty\fi
+  \in@{/}{#1}\ifin@\let\clearsnap@xc@good\@empty\fi
+  \in@{=}{#1}\ifin@\let\clearsnap@xc@good\@empty\fi
+  \in@{+}{#1}\ifin@\let\clearsnap@xc@good\@empty\fi
+  \in@{--}{#1}\ifin@\let\clearsnap@xc@good\@empty\fi
+  \def\clearsnap@xc@tmp{#1}%
+  \ifx\clearsnap@xc@tmp\clearsnap@xc@dot\let\clearsnap@xc@good\@empty\fi
+  \edef\clearsnap@xc@tmp{\clearsnap@xc@nodash#1\clearsnap@xc@end}%
+  \ifx\clearsnap@xc@tmp\clearsnap@xc@dot\let\clearsnap@xc@good\@empty\fi}
+\def\clearsnap@xc@start{\clearsnap@xc@install\xdef\clearsnap@xc@set{\clearsnap@xc@settings}}
+\@ifpackageloaded{xcolor}{\clearsnap@xc@start}{\AddToHook{package/xcolor/after}{\clearsnap@xc@start}}
+\makeatother

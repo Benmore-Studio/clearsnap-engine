@@ -1,0 +1,488 @@
+% when: pgf, pgfcore, pgfmath, tikz, pgfplots, beamer, tcolorbox, tikz-cd, circuitikz, forest, todonotes, pgfgantt, smartdiagram, chemfig, tikzposter, pgf-pie, tkz-euclide, bchart, tikzpagenodes
+% PGF evaluates every length it is given (\pgfpoint{3bp}{-1bp}) with pgfmath's expression parser, which takes hundreds
+% of steps even for a plain length. Beamer and TikZ pictures give it the same few plain ones thousands of times: a
+% length like 8bp or -1.5pt, or a length register. Those get the result pgfmath's parser gives, computed the way the
+% parser computes it (the same TeX assignment, the same units flags and \pgfmathpostparse). An expression's kind is
+% found from its text the first time pgfmath's own number check passes it to the parser, and kept for the first 2000
+% such expressions. In Clearsnap's engine, every other expression the parser is handed goes to the engine's own
+% evaluator first (engine/native/pgfmath.c), which gives pgfmath's result for plain arithmetic. Anything else, and
+% everything while the fpu library is on, runs pgfmath's own code. Installed at \begin{document}, over the pgfmath it
+% was written against only.
+\makeatletter
+\def\clearsnap@pm@expect{%
+  \begingroup
+    \pgfmath@catcodes
+    \pgfmath@quickparsefalse
+    \ifpgfmathfloat
+      \let\pgfmath@parse@next=\pgfmathfloatparsenumber
+    \else
+      \let\pgfmath@parse@next=\pgfmathparse@
+    \fi
+    \pgfmath@parse@next}
+\def\clearsnap@pm@expect@#1{%
+    \global\pgfmathunitsdeclaredfalse
+    \global\pgfmathmathunitsdeclaredfalse
+    \pgfmath@protected@edef\pgfmath@expression{#1}%
+    \expandafter\pgfmathparse@trynumber@loop\pgfmath@expression\pgfmath@parse@stop
+}
+\def\clearsnap@pm@expectnum{%
+    \let\pgfmathresult=\pgfmath@expression
+    \pgfmath@smuggleone\pgfmathresult%
+  \endgroup
+  \ignorespaces
+}
+\def\clearsnap@pm@expectend#1\pgfmath@parse@stop{%
+    \pgfmathpostparse
+    \pgfmath@smuggleone\pgfmathresult%
+  \endgroup
+  \ignorespaces}
+\def\clearsnap@pm@expectneg#1{%
+    \begingroup%
+        \pgfmath@x=-#1pt\relax%
+        \edef\pgfmathresult{\pgfmath@tonumber{\pgfmath@x}}%
+        \pgfmath@smuggleone\pgfmathresult%
+    \endgroup%
+}
+\def\clearsnap@pm@expectadd#1#2{%
+    \begingroup%
+    \pgfmath@x=#1pt\relax%
+    \pgfmath@y=#2pt\relax%
+    \advance\pgfmath@x by\pgfmath@y%
+    \pgfmath@returnone\pgfmath@x%
+  \endgroup%
+}
+\def\clearsnap@pm@expectsubtract#1#2{%
+    \begingroup%
+    \pgfmath@x=#1pt\relax%
+    \pgfmath@y=#2pt\relax%
+    \advance\pgfmath@x by-\pgfmath@y%
+    \pgfmath@returnone\pgfmath@x%
+  \endgroup%
+}
+% pgf 3.1.10 and 3.1.11a (whose parser only adds \string and \noexpand around tokens it looks up) parse lengths alike.
+\def\clearsnap@pm@versions{,3.1.10,3.1.11a,}
+\def\clearsnap@pm@install{%
+  \ifx\pgfmathparse\clearsnap@pm@expect \ifx\pgfmathparse@\clearsnap@pm@expect@
+  \ifx\pgfmathparse@expression@is@number\clearsnap@pm@expectnum \ifx\pgfmath@parse@end\clearsnap@pm@expectend
+    \edef\clearsnap@pm@tmp{\noexpand\in@{,\pgfversion,}{\clearsnap@pm@versions}}\clearsnap@pm@tmp
+    \edef\clearsnap@pm@tmp{\csname pgfmath@operation@+@name\endcsname/\csname pgfmath@operation@-@name\endcsname/%
+      \csname pgfmath@operation@+@precedence\endcsname/\csname pgfmath@operation@-@precedence\endcsname/%
+      \csname pgfmath@operation@neg@precedence\endcsname}%
+    \def\clearsnap@pm@ops{add/subtract/500/500/500}%
+    \ifx\clearsnap@pm@tmp\clearsnap@pm@ops\else\in@false\fi
+    \ifin@\global\let\pgfmathparse\clearsnap@pm@parse\clearsnap@pm@probe\fi
+  \fi\fi\fi\fi}
+% Clearsnap's engine evaluates arithmetic and the common functions itself (engine/native/pgfmath.c): \pdfstrcmp
+% (XeTeX: \strcmp) with this first argument and pgfmath's trig format gives U or N (units or not) and pgfmath's
+% result, or F to leave the expression to pgfmath.
+% Other engines answer the probe with a comparison, and the native step is skipped.
+\def\clearsnap@pm@probe{%
+  \global\let\clearsnap@pm@native\@empty
+  \edef\clearsnap@pm@ok{\detokenize{N2.0}}%
+  \ifdefined\pdfstrcmp\global\let\clearsnap@pm@cmp\pdfstrcmp\clearsnap@pm@probe@\fi
+  \ifx\clearsnap@pm@native\@empty\ifdefined\strcmp\global\let\clearsnap@pm@cmp\strcmp\clearsnap@pm@probe@\fi\fi
+  \ifx\clearsnap@pm@native\relax\clearsnap@fpu@install\fi}
+\def\clearsnap@pm@probe@{%
+  \edef\clearsnap@pm@tmp{\clearsnap@pm@cmp{clearsnapnativepgfmath0}{1+1}}%
+  \ifx\clearsnap@pm@tmp\clearsnap@pm@ok\global\let\clearsnap@pm@native\relax\fi}
+\let\clearsnap@pm@native\@empty
+\def\clearsnap@pm@natsplit#1#2\relax{\def\clearsnap@pm@natkind{#1}\def\clearsnap@pm@natval{#2}}
+\def\clearsnap@pm@natdone{%
+  \if U\clearsnap@pm@natkind\global\pgfmathunitsdeclaredtrue\fi
+  \let\pgfmathresult\clearsnap@pm@natval
+  \pgfmath@parse@end\pgfmath@parse@stop}
+% pgfmath's fpu library (pgfplots computes with it): its parse step and the float operations pgfplots calls most go to
+% the engine's evaluator first, and F leaves them to the library's own code (\pgfmathfloatparsenumber, add,
+% subtract, multiply, divide, tofixed, neg, abs, ln, sqrt). pgfplots' x and y (zero-argument functions
+% that give \x and \y) are passed along when they are exactly those. Installed with the probe above, over the fpu
+% library of the same pgf versions only, while its extended precision is the default 2.
+\edef\clearsnap@pm@F{\detokenize{F}}
+\def\clearsnap@fpu@expect#1#2\pgfmathfloat@{%
+    \def\pgfmathfloat@test{#1}%
+    \ifx\pgfmathfloat@test\pgfmathfloat@char@asterisk%
+        \def\pgfmathfloat@expression{#2}%
+        \pgfmathfloat@scaleactivetrue
+    \fi%
+    \expandafter\pgfmathparse@\expandafter{\pgfmathfloat@expression}%
+}%
+% The engine's floats are other-character text; a float's Y and e are letters.
+\begingroup\lccode`\!=`\Y \lccode`\?=`\e
+\lowercase{\endgroup\def\clearsnap@fpu@mk#1!#2?#3]#4\relax}{\def\pgfmathresult{#1Y#2e#3]}}
+\def\clearsnap@fpu@install{%
+  \edef\clearsnap@pm@tmp{\clearsnap@pm@cmp{clearsnapnativefpuop:parse}{2}}%
+  \edef\clearsnap@pm@ok{\detokenize{1Y2.0e0]}}%
+  \ifx\clearsnap@pm@tmp\clearsnap@pm@ok \ifx\pgfmathfloatparse@@\clearsnap@fpu@expect
+    \global\let\pgfmathfloatparse@@\clearsnap@fpu@parse@@
+    \clearsnap@fpu@put\pgfmathfloatparsenumber\pgfmathfloatqparsenumber{parse}%
+    \clearsnap@fpu@put\pgfmathfloattofixed@\pgfmathfloattofixed{tofixed}%
+    \clearsnap@fpu@put\pgfmathfloatneg@\relax{neg}%
+    \clearsnap@fpu@put\pgfmathfloatabs@\relax{abs}%
+    \clearsnap@fpu@put\pgfmathfloatln@\pgfmathfloatln{ln}%
+    \clearsnap@fpu@put\pgfmathfloatsqrt@\pgfmathfloatsqrt{sqrt}%
+    \clearsnap@fpu@put\pgfmathfloatadd@\pgfmathfloatadd{add}%
+    \clearsnap@fpu@put\pgfmathfloatsubtract@\pgfmathfloatsubtract{sub}%
+    \clearsnap@fpu@put\pgfmathfloatmultiply@\pgfmathfloatmultiply{mul}%
+    \clearsnap@fpu@put\pgfmathfloatdivide@\pgfmathfloatdivide{div}%
+  \fi\fi}
+% #1 the library's macro, #2 its other name (if still the same macro), #3 the operation: the original is kept as
+% \clearsnap@fpu@o@<operation> and #1 (and #2) become \clearsnap@fpu@<operation>.
+\def\clearsnap@fpu@put#1#2#3{%
+  \expandafter\global\expandafter\let\csname clearsnap@fpu@o@#3\endcsname#1%
+  \ifx#2#1\expandafter\global\expandafter\let\expandafter#2\csname clearsnap@fpu@#3\endcsname\fi
+  \expandafter\global\expandafter\let\expandafter#1\csname clearsnap@fpu@#3\endcsname}
+\def\clearsnap@fpu@one#1#2{\edef\clearsnap@pm@natres{\clearsnap@pm@cmp{clearsnapnativefpuop:#1}{#2}}}
+\def\clearsnap@fpu@float{\expandafter\clearsnap@fpu@mk\clearsnap@pm@natres\relax}
+\def\clearsnap@fpu@float@#1{\clearsnap@fpu@float}
+\def\clearsnap@fpu@float@@#1#2{\clearsnap@fpu@float}
+\def\clearsnap@fpu@text@#1{\let\pgfmathresult\clearsnap@pm@natres}
+\def\clearsnap@fpu@parse#1{\clearsnap@fpu@one{parse}{#1}%
+  \ifx\clearsnap@pm@natres\clearsnap@pm@F\expandafter\clearsnap@fpu@o@parse\else\expandafter\clearsnap@fpu@float@\fi{#1}}
+\def\clearsnap@fpu@tofixed#1{\clearsnap@fpu@one{tofixed}{#1}%
+  \ifx\clearsnap@pm@natres\clearsnap@pm@F\expandafter\clearsnap@fpu@o@tofixed\else\expandafter\clearsnap@fpu@text@\fi{#1}}
+\def\clearsnap@fpu@neg#1{\clearsnap@fpu@one{neg}{#1}%
+  \ifx\clearsnap@pm@natres\clearsnap@pm@F\expandafter\clearsnap@fpu@o@neg\else\expandafter\clearsnap@fpu@float@\fi{#1}}
+\def\clearsnap@fpu@abs#1{\clearsnap@fpu@one{abs}{#1}%
+  \ifx\clearsnap@pm@natres\clearsnap@pm@F\expandafter\clearsnap@fpu@o@abs\else\expandafter\clearsnap@fpu@float@\fi{#1}}
+\def\clearsnap@fpu@ln#1{\clearsnap@fpu@one{ln}{#1}%
+  \ifx\clearsnap@pm@natres\clearsnap@pm@F\expandafter\clearsnap@fpu@o@ln\else\expandafter\clearsnap@fpu@float@\fi{#1}}
+\def\clearsnap@fpu@sqrt#1{\clearsnap@fpu@one{sqrt}{#1}%
+  \ifx\clearsnap@pm@natres\clearsnap@pm@F\expandafter\clearsnap@fpu@o@sqrt\else\expandafter\clearsnap@fpu@float@\fi{#1}}
+\def\clearsnap@fpu@add#1#2{%
+  \ifnum\pgfmathfloatextprec@shift=2 \clearsnap@fpu@one{add}{#1,#2}\else\let\clearsnap@pm@natres\clearsnap@pm@F\fi
+  \ifx\clearsnap@pm@natres\clearsnap@pm@F\expandafter\clearsnap@fpu@o@add\else\expandafter\clearsnap@fpu@float@@\fi{#1}{#2}}
+\def\clearsnap@fpu@sub#1#2{%
+  \ifnum\pgfmathfloatextprec@shift=2 \clearsnap@fpu@one{sub}{#1,#2}\else\let\clearsnap@pm@natres\clearsnap@pm@F\fi
+  \ifx\clearsnap@pm@natres\clearsnap@pm@F\expandafter\clearsnap@fpu@o@sub\else\expandafter\clearsnap@fpu@float@@\fi{#1}{#2}}
+\def\clearsnap@fpu@mul#1#2{\clearsnap@fpu@one{mul}{#1,#2}%
+  \ifx\clearsnap@pm@natres\clearsnap@pm@F\expandafter\clearsnap@fpu@o@mul\else\expandafter\clearsnap@fpu@float@@\fi{#1}{#2}}
+\def\clearsnap@fpu@div#1#2{\clearsnap@fpu@one{div}{#1,#2}%
+  \ifx\clearsnap@pm@natres\clearsnap@pm@F\expandafter\clearsnap@fpu@o@div\else\expandafter\clearsnap@fpu@float@@\fi{#1}{#2}}
+% The parse step: pgfmath's \pgfmathparse@ as the library calls it, the engine first.
+\def\clearsnap@fpu@parse@@#1#2\pgfmathfloat@{%
+  \def\pgfmathfloat@test{#1}%
+  \ifx\pgfmathfloat@test\pgfmathfloat@char@asterisk
+    \def\pgfmathfloat@expression{#2}%
+    \pgfmathfloat@scaleactivetrue
+  \fi
+  \expandafter\clearsnap@fpu@parse@\expandafter{\pgfmathfloat@expression}}
+\def\clearsnap@fpu@xexpect{\edef\pgfmathresult{\tikz@plot@var}}
+\def\clearsnap@fpu@yexpect{\edef\pgfmathresult{\pgfplots@plot@var@y}}
+% (pgfplots binds x before \x exists, and pgfmath only reads \x when the expression has an x, so a binding is the text
+% \x stands for, when it is defined; anything that is not a float or number there leaves the expression to pgfmath.)
+\def\clearsnap@fpu@binds{%
+  \ifx\pgfmathx@\clearsnap@fpu@xexpect\expandafter\clearsnap@fpu@bind\tikz@plot@var x\fi
+  \ifx\pgfmathy@\clearsnap@fpu@yexpect\expandafter\clearsnap@fpu@bind\pgfplots@plot@var@y y\fi}
+\def\clearsnap@fpu@bind#1#2{\ifdefined#1\ifx#1\relax\else;#2=\detokenize\expandafter{#1}\fi\fi}
+\def\clearsnap@fpu@parse@#1{%
+  \global\pgfmathunitsdeclaredfalse
+  \global\pgfmathmathunitsdeclaredfalse
+  \pgfmath@protected@edef\pgfmath@expression{#1}%
+  \let\clearsnap@pm@kind\clearsnap@pm@slow
+  \ifnum\pgfmathfloatextprec@shift=2
+    \edef\clearsnap@pm@natres{\clearsnap@pm@cmp{clearsnapnativefpu\pgfmath@trig@format@choice\clearsnap@fpu@binds}%
+      {\unexpanded\expandafter{\pgfmath@expression}}}%
+    \expandafter\clearsnap@pm@natsplit\clearsnap@pm@natres\relax
+    \if F\clearsnap@pm@natkind\else\let\clearsnap@pm@kind\clearsnap@fpu@done\fi
+  \fi
+  \clearsnap@pm@kind}
+\def\clearsnap@fpu@done{%
+  \if U\clearsnap@pm@natkind\global\pgfmathunitsdeclaredtrue\fi
+  \expandafter\clearsnap@fpu@mk\clearsnap@pm@natval\relax
+  \pgfmath@parse@end\pgfmath@parse@stop}
+% pgfmath's \pgfmathparse with its own \pgfmathparse@ in place of pgfmath's.
+\def\clearsnap@pm@parse{%
+  \begingroup
+    \pgfmath@catcodes
+    \pgfmath@quickparsefalse
+    \ifpgfmathfloat
+      \let\pgfmath@parse@next=\pgfmathfloatparsenumber
+    \else
+      \let\pgfmath@parse@next=\clearsnap@pm@parse@
+    \fi
+    \pgfmath@parse@next}
+% pgfmath's \pgfmathparse@: a kept kind runs at once; otherwise pgfmath's number check runs, and if it hands the
+% expression to the parser (\pgfmathparse@@, which parses \pgfmath@expression), \clearsnap@pm@full sees it first.
+\def\clearsnap@pm@parse@#1{%
+  \global\pgfmathunitsdeclaredfalse
+  \global\pgfmathmathunitsdeclaredfalse
+  \pgfmath@protected@edef\pgfmath@expression{#1}%
+  \let\clearsnap@pm@kind\clearsnap@pm@slow
+  \ifnum\escapechar=92
+    \edef\clearsnap@pm@key{\detokenize\expandafter{\pgfmath@expression}}%
+    \ifcsname clearsnap@pm@k@\clearsnap@pm@key\endcsname
+      \expandafter\let\expandafter\clearsnap@pm@kind\csname clearsnap@pm@k@\clearsnap@pm@key\endcsname
+    \else
+      \let\clearsnap@pm@real\pgfmathparse@@
+      \let\pgfmathparse@@\clearsnap@pm@full
+    \fi
+  \fi
+  \clearsnap@pm@kind}
+\def\clearsnap@pm@stop{\clearsnap@pm@stop}
+\def\clearsnap@pm@slow{\expandafter\pgfmathparse@trynumber@loop\pgfmath@expression\pgfmath@parse@stop}
+\def\clearsnap@pm@parser{\pgfmathparse@@\pgfmath@parse@stop}
+\newcount\clearsnap@pm@count
+\def\clearsnap@pm@full#1\pgfmath@parse@stop{%
+  \let\pgfmathparse@@\clearsnap@pm@real
+  \ifx\clearsnap@pm@native\relax
+    \edef\clearsnap@pm@natres{\clearsnap@pm@cmp{clearsnapnativepgfmath\pgfmath@trig@format@choice}%
+      {\unexpanded\expandafter{\pgfmath@expression}}}%
+    \expandafter\clearsnap@pm@natsplit\clearsnap@pm@natres\relax
+    \if F\clearsnap@pm@natkind\let\clearsnap@pm@kind\clearsnap@pm@parser\else\let\clearsnap@pm@kind\clearsnap@pm@natdone\fi
+  \else\ifnum\clearsnap@pm@count<2000
+    \global\advance\clearsnap@pm@count\@ne
+    \clearsnap@pm@classify
+    \ifx\clearsnap@pm@kind\clearsnap@pm@slow\let\clearsnap@pm@kind\clearsnap@pm@parser\fi
+  \else
+    \let\clearsnap@pm@kind\clearsnap@pm@parser
+  \fi\fi
+  \clearsnap@pm@kind}
+% A length (8bp, -1.5pt, \pgf@x, -\pgf@x): the parser assigns it to \pgfmath@dimen as TeX reads it, and the result is
+% that length as a number (with a minus, pgfmath's neg of it: the same number negated).
+\def\clearsnap@pm@length{%
+  \pgfmath@dimen=\pgfmath@expression\relax
+  \global\pgfmathunitsdeclaredtrue
+  \edef\pgfmathresult{\pgfmath@tonumber{\pgfmath@dimen}}%
+  \pgfmath@parse@end\pgfmath@parse@stop}
+\def\clearsnap@pm@split#1#2\clearsnap@pm@stop{\def\clearsnap@pm@first{#1}\def\clearsnap@pm@rest{#2}}
+\def\clearsnap@pm@neg{%
+  \expandafter\clearsnap@pm@split\pgfmath@expression\clearsnap@pm@stop
+  \ifx\clearsnap@pm@first\pgfmath@char@minus \ifx\pgfmathneg@\clearsnap@pm@expectneg
+    \let\clearsnap@pm@next\clearsnap@pm@length
+  \else\let\clearsnap@pm@next\clearsnap@pm@slow\fi
+  \else\let\clearsnap@pm@next\clearsnap@pm@slow\fi
+  \clearsnap@pm@next}
+% A register is used while it is the dimen register it was when its expression was first seen.
+\def\clearsnap@pm@reg{%
+  \expandafter\ifx\csname clearsnap@pm@r@\clearsnap@pm@key\expandafter\endcsname\pgfmath@expression
+    \expandafter\clearsnap@pm@length
+  \else
+    \expandafter\clearsnap@pm@slow
+  \fi}
+\def\clearsnap@pm@negreg{%
+  \expandafter\clearsnap@pm@split\pgfmath@expression\clearsnap@pm@stop
+  \expandafter\ifx\csname clearsnap@pm@r@\clearsnap@pm@key\expandafter\endcsname\clearsnap@pm@rest
+    \expandafter\clearsnap@pm@neg
+  \else
+    \expandafter\clearsnap@pm@slow
+  \fi}
+% The kind of an expression the parser was given, kept for the next time: a length, a register (while it is the dimen
+% register it was) or "slow" (\clearsnap@pm@slow: pgfmath's number check and parser).
+\def\clearsnap@pm@classify{%
+  \let\clearsnap@pm@kind\clearsnap@pm@slow
+  \edef\clearsnap@pm@tmp{\noexpand\in@{ }{\clearsnap@pm@key}}\clearsnap@pm@tmp
+  \ifin@
+    \clearsnap@pm@regscan
+  \else
+    \let\clearsnap@pm@sign\@empty
+    \expandafter\clearsnap@pm@sA\clearsnap@pm@key\clearsnap@pm@stop\clearsnap@pm@stop\clearsnap@pm@end
+  \fi
+  \ifx\clearsnap@pm@kind\clearsnap@pm@slow\clearsnap@pm@chainscan\fi
+  \global\expandafter\let\csname clearsnap@pm@k@\clearsnap@pm@key\endcsname\clearsnap@pm@kind}
+% A length is an optional -, digits with at most one period (at least one digit), and one of pgfmath's two-letter
+% units that do not depend on the font: the text read one character at a time.
+\def\clearsnap@pm@end{\clearsnap@pm@end}
+\def\clearsnap@pm@pad{\clearsnap@pm@stop\clearsnap@pm@stop}
+\def\clearsnap@pm@sX#1\clearsnap@pm@end{}
+\def\clearsnap@pm@class#1#2#3#4{% next: after a digit #2, after a period #3, anything else #4 (which reads it again)
+  \def\clearsnap@pm@nx{#4#1}%
+  \ifx#1\clearsnap@pm@stop\let\clearsnap@pm@nx\clearsnap@pm@sX\else
+    \ifnum`#1>47 \ifnum`#1<58 \let\clearsnap@pm@nx#2\fi\fi
+    \if.#1\let\clearsnap@pm@nx#3\fi
+  \fi}
+\def\clearsnap@pm@sA#1{%
+  \ifx#1\clearsnap@pm@stop\let\clearsnap@pm@nx\clearsnap@pm@sX\else
+    \if-#1\def\clearsnap@pm@sign{-}\let\clearsnap@pm@nx\clearsnap@pm@sB
+    \else\clearsnap@pm@class#1\clearsnap@pm@sC\clearsnap@pm@sD\clearsnap@pm@sX\fi
+  \fi
+  \clearsnap@pm@nx}
+\def\clearsnap@pm@sB#1{\clearsnap@pm@class#1\clearsnap@pm@sC\clearsnap@pm@sD\clearsnap@pm@sX\clearsnap@pm@nx}
+\def\clearsnap@pm@sC#1{\clearsnap@pm@class#1\clearsnap@pm@sC\clearsnap@pm@sE\clearsnap@pm@sU\clearsnap@pm@nx}
+\def\clearsnap@pm@sD#1{\clearsnap@pm@class#1\clearsnap@pm@sE\clearsnap@pm@sX\clearsnap@pm@sX\clearsnap@pm@nx}
+\def\clearsnap@pm@sE#1{\clearsnap@pm@class#1\clearsnap@pm@sE\clearsnap@pm@sU\clearsnap@pm@sU\clearsnap@pm@nx}
+\def\clearsnap@pm@sU#1#2#3\clearsnap@pm@end{%
+  \def\clearsnap@pm@tmp{#3}%
+  \ifx\clearsnap@pm@tmp\clearsnap@pm@pad
+    \ifcsname clearsnap@pm@u@\string#1\string#2\endcsname
+      \ifx\clearsnap@pm@sign\@empty\let\clearsnap@pm@kind\clearsnap@pm@length\else\let\clearsnap@pm@kind\clearsnap@pm@neg\fi
+    \fi
+  \fi}
+\@for\clearsnap@pm@tmp:={pt,bp,cm,mm,in,pc,dd,cc,sp,nd,nc}\do{\expandafter\let\csname clearsnap@pm@u@\clearsnap@pm@tmp\endcsname\@empty}
+% A sum or difference of terms (a length, a register with or without a factor, a number), after a minus or not, in
+% braces or not (-1, \bmb@boxwidth+4bp, 0.5\bmb@boxwidth+6bp, {64.80573pt}). pgfmath reads each term as TeX reads it,
+% negates and adds them up with \advance (its neg, add and subtract), so the code kept for the expression makes the same
+% assignments. It is used for this exact token list (\ifx) while pgfmath's neg, add and subtract and the registers are
+% what they were.
+\def\clearsnap@pm@chain{%
+  \let\clearsnap@pm@next\clearsnap@pm@slow
+  \expandafter\ifx\csname clearsnap@pm@e@\clearsnap@pm@key\endcsname\pgfmath@expression
+    \let\clearsnap@pm@next\clearsnap@pm@chain@
+    \csname clearsnap@pm@g@\clearsnap@pm@key\endcsname
+  \fi
+  \clearsnap@pm@next}
+\def\clearsnap@pm@chain@{\csname clearsnap@pm@x@\clearsnap@pm@key\endcsname\pgfmath@parse@end\pgfmath@parse@stop}
+\def\clearsnap@pm@chk#1#2{\ifx#1#2\else\let\clearsnap@pm@next\clearsnap@pm@slow\fi}
+% The scan reads the expression (pgfmath's braces stripped) a token at a time; a brace or a space ends it.
+\def\clearsnap@pm@chainscan{%
+  \expandafter\pgfmath@bgroup@strip\expandafter{\pgfmath@expression}%
+  \let\clearsnap@pm@code\@empty \let\clearsnap@pm@guard\@empty \let\clearsnap@pm@term\@empty
+  \let\clearsnap@pm@sign\@empty \let\clearsnap@pm@op\@empty \let\clearsnap@pm@unit\@empty
+  \let\clearsnap@pm@terms\@empty \let\clearsnap@pm@good\relax \def\clearsnap@pm@st{A}%
+  \expandafter\clearsnap@pm@read\pgfmath@bgroup@stripped\clearsnap@pm@end
+  \ifx\clearsnap@pm@good\relax
+    % One unsigned number is pgfmath's number as typed, not a computed one.
+    \edef\clearsnap@pm@tmp{\clearsnap@pm@sign\clearsnap@pm@terms}%
+    \def\clearsnap@pm@single{n}%
+    \ifx\clearsnap@pm@tmp\clearsnap@pm@single\else
+      \global\expandafter\let\csname clearsnap@pm@e@\clearsnap@pm@key\endcsname\pgfmath@expression
+      \global\expandafter\let\csname clearsnap@pm@g@\clearsnap@pm@key\endcsname\clearsnap@pm@guard
+      \expandafter\in@\expandafter u\expandafter{\clearsnap@pm@terms}%
+      \expandafter\xdef\csname clearsnap@pm@x@\clearsnap@pm@key\endcsname{\unexpanded\expandafter{\clearsnap@pm@code}%
+        \ifin@\global\noexpand\pgfmathunitsdeclaredtrue\fi
+        \edef\noexpand\pgfmathresult{\noexpand\pgfmath@tonumber{\noexpand\pgfmath@dimen}}}%
+      \let\clearsnap@pm@kind\clearsnap@pm@chain
+    \fi
+  \fi}
+\def\clearsnap@pm@read{\futurelet\clearsnap@pm@la\clearsnap@pm@read@}
+\def\clearsnap@pm@read@{%
+  \ifx\clearsnap@pm@la\clearsnap@pm@end
+    \let\clearsnap@pm@nx\clearsnap@pm@atend
+  \else\ifx\clearsnap@pm@la\bgroup
+    \let\clearsnap@pm@nx\clearsnap@pm@fail
+  \else\ifx\clearsnap@pm@la\egroup
+    \let\clearsnap@pm@nx\clearsnap@pm@fail
+  \else\ifx\clearsnap@pm@la\@sptoken
+    \let\clearsnap@pm@nx\clearsnap@pm@fail
+  \else
+    \let\clearsnap@pm@nx\clearsnap@pm@take
+  \fi\fi\fi\fi
+  \clearsnap@pm@nx}
+\def\clearsnap@pm@fail#1\clearsnap@pm@end{\let\clearsnap@pm@good\@empty}
+\def\clearsnap@pm@atend\clearsnap@pm@end{\clearsnap@pm@go E\relax}
+% A token's type: D digit, P period, M minus, A plus, L letter, R control sequence or active character, X other.
+\def\clearsnap@pm@take#1{%
+  \def\clearsnap@pm@ty{X}%
+  \ifcat\relax\noexpand#1\def\clearsnap@pm@ty{R}\else
+    \ifcat\noexpand#1-%
+      \ifnum`#1>47 \ifnum`#1<58 \def\clearsnap@pm@ty{D}\fi\fi
+      \if\noexpand#1.\def\clearsnap@pm@ty{P}\fi
+      \if\noexpand#1-\def\clearsnap@pm@ty{M}\fi
+      \if\noexpand#1+\def\clearsnap@pm@ty{A}\fi
+    \fi
+    \ifnum`#1>96 \ifnum`#1<123 \ifcat\noexpand#1a\def\clearsnap@pm@ty{L}\fi\ifcat\noexpand#1-\def\clearsnap@pm@ty{L}\fi\fi\fi
+  \fi
+  \clearsnap@pm@go\clearsnap@pm@ty#1}
+\def\clearsnap@pm@go#1#2{%
+  \ifcsname clearsnap@pm@s\clearsnap@pm@st @#1\endcsname
+    \csname clearsnap@pm@s\clearsnap@pm@st @#1\endcsname#2%
+  \else
+    \let\clearsnap@pm@good\@empty
+  \fi
+  \ifx\clearsnap@pm@good\relax
+    \if#1E\else\expandafter\expandafter\expandafter\clearsnap@pm@read\fi
+  \else
+    \if#1E\else\expandafter\expandafter\expandafter\clearsnap@pm@fail\fi
+  \fi}
+\def\clearsnap@pm@add#1{\expandafter\def\expandafter\clearsnap@pm@term\expandafter{\clearsnap@pm@term#1}}
+\def\clearsnap@pm@set#1{\def\clearsnap@pm@st{#1}}
+% Transitions: start, term start, integer digits, after a leading period, fraction digits, a unit letter, after a
+% unit, after a register.
+\@namedef{clearsnap@pm@sA@M}#1{\def\clearsnap@pm@sign{-}\clearsnap@pm@set B}
+\@namedef{clearsnap@pm@sA@D}{\@nameuse{clearsnap@pm@sB@D}}
+\@namedef{clearsnap@pm@sA@P}{\@nameuse{clearsnap@pm@sB@P}}
+\@namedef{clearsnap@pm@sA@R}{\@nameuse{clearsnap@pm@sB@R}}
+\@namedef{clearsnap@pm@sB@D}#1{\clearsnap@pm@add#1\clearsnap@pm@set N}
+\@namedef{clearsnap@pm@sB@P}#1{\clearsnap@pm@add#1\clearsnap@pm@set Q}
+\@namedef{clearsnap@pm@sB@R}#1{\clearsnap@pm@treg#1}
+\@namedef{clearsnap@pm@sN@D}#1{%
+  \def\clearsnap@pm@tmp{0}\ifx\clearsnap@pm@term\clearsnap@pm@tmp\let\clearsnap@pm@good\@empty\fi
+  \clearsnap@pm@add#1}
+\@namedef{clearsnap@pm@sN@P}#1{\clearsnap@pm@add#1\clearsnap@pm@set F}
+\@namedef{clearsnap@pm@sN@L}#1{\clearsnap@pm@add#1\def\clearsnap@pm@unit{#1}\clearsnap@pm@set U}
+\@namedef{clearsnap@pm@sN@R}#1{\clearsnap@pm@treg#1}
+\@namedef{clearsnap@pm@sN@A}#1{\clearsnap@pm@endterm n\def\clearsnap@pm@op{}\clearsnap@pm@set B}
+\@namedef{clearsnap@pm@sN@M}#1{\clearsnap@pm@endterm n\def\clearsnap@pm@op{-}\clearsnap@pm@set B}
+\@namedef{clearsnap@pm@sN@E}#1{\clearsnap@pm@endterm n}
+\@namedef{clearsnap@pm@sQ@D}#1{\clearsnap@pm@add#1\clearsnap@pm@set F}
+\@namedef{clearsnap@pm@sF@D}#1{\clearsnap@pm@add#1}
+\@namedef{clearsnap@pm@sF@L}{\@nameuse{clearsnap@pm@sN@L}}
+\@namedef{clearsnap@pm@sF@R}#1{\clearsnap@pm@treg#1}
+\@namedef{clearsnap@pm@sF@A}{\@nameuse{clearsnap@pm@sN@A}}
+\@namedef{clearsnap@pm@sF@M}{\@nameuse{clearsnap@pm@sN@M}}
+\@namedef{clearsnap@pm@sF@E}{\@nameuse{clearsnap@pm@sN@E}}
+\@namedef{clearsnap@pm@sU@L}#1{%
+  \ifcsname clearsnap@pm@u@\expandafter\string\clearsnap@pm@unit\string#1\endcsname\else\let\clearsnap@pm@good\@empty\fi
+  \clearsnap@pm@add#1\clearsnap@pm@set V}
+\@namedef{clearsnap@pm@sV@A}#1{\clearsnap@pm@endterm u\def\clearsnap@pm@op{}\clearsnap@pm@set B}
+\@namedef{clearsnap@pm@sV@M}#1{\clearsnap@pm@endterm u\def\clearsnap@pm@op{-}\clearsnap@pm@set B}
+\@namedef{clearsnap@pm@sV@E}#1{\clearsnap@pm@endterm u}
+\@namedef{clearsnap@pm@sR@A}{\@nameuse{clearsnap@pm@sV@A}}
+\@namedef{clearsnap@pm@sR@M}{\@nameuse{clearsnap@pm@sV@M}}
+\@namedef{clearsnap@pm@sR@E}{\@nameuse{clearsnap@pm@sV@E}}
+% A register term (after a factor or not) is a dimen register; the guard checks it is still the same one.
+\def\clearsnap@pm@treg#1{%
+  \edef\clearsnap@pm@tmp{\noexpand\clearsnap@pm@dimtest\meaning#1\string\dimen\noexpand\clearsnap@pm@end}\clearsnap@pm@tmp
+  \ifx\clearsnap@pm@isdim\relax
+    \global\expandafter\let\csname clearsnap@pm@d@\string#1\endcsname#1%
+    \edef\clearsnap@pm@guard{\unexpanded\expandafter{\clearsnap@pm@guard}\noexpand\clearsnap@pm@chk\noexpand#1%
+      \expandafter\noexpand\csname clearsnap@pm@d@\string#1\endcsname}%
+    \clearsnap@pm@add#1\clearsnap@pm@set R
+  \else
+    \let\clearsnap@pm@good\@empty
+  \fi}
+\begingroup\edef\clearsnap@pm@tmp{\endgroup
+  \def\noexpand\clearsnap@pm@dimtest##1\string\dimen##2\noexpand\clearsnap@pm@end{%
+    \noexpand\clearsnap@pm@dimtest@{##1}##2x\noexpand\clearsnap@pm@end}}\clearsnap@pm@tmp
+\def\clearsnap@pm@dimtest@#1#2#3\clearsnap@pm@end{%
+  \let\clearsnap@pm@isdim\@empty
+  \def\clearsnap@pm@tmp{#1}%
+  \ifx\clearsnap@pm@tmp\@empty \ifnum`#2>47 \ifnum`#2<58 \let\clearsnap@pm@isdim\relax\fi\fi\fi}
+% A term goes into the code: the first as \pgfmath@dimen=, a later one with \advance (n: a number, read as pt).
+\def\clearsnap@pm@pt{pt}
+\def\clearsnap@pm@endterm#1{%
+  \edef\clearsnap@pm@tmp{\unexpanded\expandafter{\clearsnap@pm@term}\if#1n\clearsnap@pm@pt\fi\relax}%
+  \ifx\clearsnap@pm@terms\@empty
+    \edef\clearsnap@pm@code{\noexpand\pgfmath@dimen=\clearsnap@pm@sign\unexpanded\expandafter{\clearsnap@pm@tmp}}%
+    \ifx\clearsnap@pm@sign\@empty\else
+      \edef\clearsnap@pm@guard{\unexpanded\expandafter{\clearsnap@pm@guard}\noexpand\clearsnap@pm@chk
+        \noexpand\pgfmathneg@\noexpand\clearsnap@pm@expectneg}%
+    \fi
+  \else
+    % (pgfmath's add and subtract end by assigning the sum to itself, which keeps it within \maxdimen.)
+    \edef\clearsnap@pm@code{\unexpanded\expandafter{\clearsnap@pm@code}\noexpand\advance\noexpand\pgfmath@dimen by%
+      \clearsnap@pm@op\unexpanded\expandafter{\clearsnap@pm@tmp}\noexpand\pgfmath@dimen\noexpand\pgfmath@dimen}%
+    \edef\clearsnap@pm@guard{\unexpanded\expandafter{\clearsnap@pm@guard}\noexpand\clearsnap@pm@chk
+      \ifx\clearsnap@pm@op\@empty\noexpand\pgfmathadd@\noexpand\clearsnap@pm@expectadd
+      \else\noexpand\pgfmathsubtract@\noexpand\clearsnap@pm@expectsubtract\fi}%
+  \fi
+  \edef\clearsnap@pm@terms{\clearsnap@pm@terms#1}%
+  \let\clearsnap@pm@term\@empty \let\clearsnap@pm@unit\@empty}
+% A register is one control word (the text is just its name and a space), or - and one, that is a dimen register.
+\def\clearsnap@pm@one{\clearsnap@pm@stop}
+\def\clearsnap@pm@rsplit#1#2\clearsnap@pm@end{\def\clearsnap@pm@first{#1}\def\clearsnap@pm@rest{#2}}
+\def\clearsnap@pm@regscan{%
+  \expandafter\clearsnap@pm@rsplit\pgfmath@expression\clearsnap@pm@stop\clearsnap@pm@end
+  \ifx\clearsnap@pm@first\pgfmath@char@minus
+    \let\clearsnap@pm@reg@kind\clearsnap@pm@negreg
+    \expandafter\clearsnap@pm@rsplit\clearsnap@pm@rest\clearsnap@pm@end
+  \else
+    \let\clearsnap@pm@reg@kind\clearsnap@pm@reg
+  \fi
+  \ifx\clearsnap@pm@rest\clearsnap@pm@one
+    \edef\clearsnap@pm@tmp{\ifx\clearsnap@pm@reg@kind\clearsnap@pm@negreg-\fi\detokenize\expandafter{\clearsnap@pm@first}}%
+    \ifx\clearsnap@pm@tmp\clearsnap@pm@key
+      \expandafter\clearsnap@pm@isdimen\clearsnap@pm@first
+    \fi
+  \fi}
+\ExplSyntaxOn
+\regex_const:Nn \c__clearsnap_pm_dimen_regex { \A \\dimen \d+ \Z }
+\cs_new_protected:Npn \clearsnap@pm@isdimen #1
+  {
+    \exp_args:NNe \regex_match:NnT \c__clearsnap_pm_dimen_regex { \token_to_meaning:N #1 }
+      {
+        \cs_gset_eq:cN { clearsnap@pm@r@ \clearsnap@pm@key } #1
+        \cs_set_eq:NN \clearsnap@pm@kind \clearsnap@pm@reg@kind
+      }
+  }
+\ExplSyntaxOff
+\AtBeginDocument{\clearsnap@pm@install}
+\makeatother

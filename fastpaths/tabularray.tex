@@ -1,0 +1,80 @@
+% when: tabularray
+\ExplSyntaxOn
+\cs_set_protected:Npn \__clearsnap_tblr_expect_insert:N #1
+  {
+    \regex_replace_all:NVN \c__tblr_insert_braces_regex \c__tblr_insert_braces_tl #1
+    \regex_replace_all:NVN \c__tblr_insert_braces_regex \c__tblr_insert_braces_tl #1
+  }
+\cs_set_protected:Npn \__clearsnap_tblr_expect_remove:N #1
+  {
+    \regex_replace_all:NVN \c__tblr_remove_braces_regex \c__tblr_remove_braces_tl #1
+    \regex_replace_all:NVN \c__tblr_remove_braces_regex \c__tblr_remove_braces_tl #1
+  }
+\cs_set_protected:Npn \__clearsnap_tblr_if_begin:NT #1#2
+  { \exp_args:Nee \str_if_in:nnT { \tl_to_str:N #1 } { \token_to_str:N \begin } {#2} }
+\cs_set_protected:Npn \__clearsnap_tblr:
+  {
+    \regex_set:Nn \l_tmpa_regex { \c{begin} \cB\{ (\c[^BE].*) \cE\} (.*?) \c{end} \cB\{ (\c[^BE].*) \cE\} }
+    \regex_set:Nn \l_tmpb_regex { \c{begin} \cB\{ \cB\{ (.*?) \c{end} \cE\} }
+    \bool_lazy_all:nT
+      {
+        { \cs_if_eq_p:NN \__tblr_insert_braces:N \__clearsnap_tblr_expect_insert:N }
+        { \cs_if_eq_p:NN \__tblr_remove_braces:N \__clearsnap_tblr_expect_remove:N }
+        { \tl_if_eq_p:NN \c__tblr_insert_braces_regex \l_tmpa_regex }
+        { \tl_if_eq_p:NN \c__tblr_remove_braces_regex \l_tmpb_regex }
+      }
+      {
+        \cs_gset_protected:Npn \__tblr_insert_braces:N ##1
+          { \__clearsnap_tblr_if_begin:NT ##1 { \__clearsnap_tblr_expect_insert:N ##1 } }
+        \cs_gset_protected:Npn \__tblr_remove_braces:N ##1
+          { \__clearsnap_tblr_if_begin:NT ##1 { \__clearsnap_tblr_expect_remove:N ##1 } }
+      }
+  }
+\cs_set_protected:Npn \__clearsnap_tblr_expect_trim:N #1
+  {
+    \regex_replace_once:NnN \c__tblr_trim_left_par_space_regex {} #1
+    \regex_replace_once:NnN \c__tblr_trim_right_space_par_regex {} #1
+  }
+\str_new:N \l__clearsnap_tblr_str
+\int_new:N \l__clearsnap_tblr_int
+\cs_set:Npn \__clearsnap_tblr_code:n #1 { \int_eval:n { `#1 } }
+\cs_set_protected:Npn \__clearsnap_tblr_edge:NnT #1#2#3
+  {
+    \str_set:Ne \l__clearsnap_tblr_str { \tl_to_str:N #1 }
+    \str_if_empty:NF \l__clearsnap_tblr_str
+      {
+        \int_set:Nn \l__clearsnap_tblr_int { \exp_args:Ne \__clearsnap_tblr_code:n { \str_item:Nn \l__clearsnap_tblr_str {#2} } }
+        \bool_lazy_all:nF
+          {
+            { \int_compare_p:nNn \l__clearsnap_tblr_int > { 32 } }
+            { \int_compare_p:nNn \l__clearsnap_tblr_int < { 127 } }
+            { ! \int_compare_p:nNn \l__clearsnap_tblr_int = { 92 } }
+          }
+          {#3}
+      }
+  }
+\cs_set_protected:Npn \__clearsnap_tblr_trim:
+  {
+    \regex_set:Nn \l_tmpa_regex { ^ \c{par} ? \s * }
+    \regex_set:Nn \l_tmpb_regex { \s * \c{par} ? $ }
+    \bool_lazy_all:nT
+      {
+        { \cs_if_eq_p:NN \__tblr_trim_par_space_tokens:N \__clearsnap_tblr_expect_trim:N }
+        { \tl_if_eq_p:NN \c__tblr_trim_left_par_space_regex \l_tmpa_regex }
+        { \tl_if_eq_p:NN \c__tblr_trim_right_space_par_regex \l_tmpb_regex }
+      }
+      {
+        \cs_gset_protected:Npn \__tblr_trim_par_space_tokens:N ##1
+          {
+            \int_compare:nNnTF \tex_escapechar:D = { 92 }
+              {
+                \__clearsnap_tblr_edge:NnT ##1 { 1 } { \regex_replace_once:NnN \c__tblr_trim_left_par_space_regex {} ##1 }
+                \__clearsnap_tblr_edge:NnT ##1 { -1 } { \regex_replace_once:NnN \c__tblr_trim_right_space_par_regex {} ##1 }
+              }
+              { \__clearsnap_tblr_expect_trim:N ##1 }
+          }
+      }
+  }
+\IfPackageLoadedTF { tabularray } { \__clearsnap_tblr: \__clearsnap_tblr_trim: }
+  { \AddToHook { package / tabularray / after } { \__clearsnap_tblr: \__clearsnap_tblr_trim: } }
+\ExplSyntaxOff

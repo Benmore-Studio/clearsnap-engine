@@ -1,0 +1,10 @@
+node_modules/
+build/
+site/runner.js
+site/worker.js
+site/pdf-lib.min.js
+site/v*/
+site/tl2025/
+busytex-build/work/
+busytex-build/out*/
+__pycache__/
